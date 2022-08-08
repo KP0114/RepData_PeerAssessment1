@@ -1,0 +1,171 @@
+---
+title: "Reproducible Research - Course Project 1"
+author: "Kevin H. Prescott"
+date: "8/8/2022"
+output: 
+  html_document :
+      theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading and preprocessing data
+### Loading required packages
+```{r packages, echo = TRUE, warning = FALSE, message = FALSE}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+```
+
+### Loading data
+We begin by loading the Activity dataset which will be used in this analysis
+
+```{r load_data, echo = TRUE}
+activity_data <- read.csv("C:\\Users\\opti1039\\OneDrive - The Toronto-Dominion Bank\\Desktop\\JohnHopkinsCourse\\Data\\activity.csv", header=TRUE)
+```
+
+### Data overview and preprocessing
+The raw data contains the following variables and formats :
+```{r show_head, echo = TRUE}
+head(activity_data)
+```
+
+We have three variables :
+
+* Steps
+* Date
+* Intervals
+
+Based on the initial sample shown above, it seems like we have missing values. Looking at summaries by variables :
+
+
+```{r show_summary_steps, echo = TRUE}
+summary(activity_data$steps)
+```
+```{r show_summary_interval, echo = TRUE}
+summary(activity_data$interval)
+```
+We will thus need to handle missing values in the *steps* variable and see how the *interval* one was assigned for missing values
+
+One last thing to check before starting the analysis is the format of the *date* variable. We would want it to be in a date format so that we can easily use it in our analysis.
+
+```{r date_format_check, echo = TRUE}
+class(activity_data$date)
+```
+We convert the *date* variable to a date format
+
+```{r date_format_change, echo = TRUE}
+activity_data$date <- ymd(activity_data$date)
+class(activity_data$date)
+```
+
+# Question 1 : What is the mean total number of steps taken per day ?
+
+### Total daily steps taken
+First, we compute the total number of steps per day and store it in a dataframe
+```{r sum_daily_steps_df, echo = TRUE}
+sum_day_steps <- activity_data %>% filter(!is.na(steps)) %>% group_by(date) %>% summarize(total_daily_steps = sum(steps, na.rm = TRUE))
+sum_day_steps
+```
+
+### Plot total daily steps taken
+```{r sum_daily_steps_plot, echo = TRUE}
+sum_day_steps_plot <- ggplot(sum_day_steps, aes(total_daily_steps)) +
+                      geom_histogram(fill = "blue", binwidth = 1000) +
+                      labs(title = "Total Steps per Day", x = "Steps per day", y = "Frequency")
+sum_day_steps_plot
+```
+
+### Mean and median of total number of steps taken per day
+```{r stat_daily_steps, echo = TRUE}
+mean_day_steps <- mean(sum_day_steps$total_daily_steps,na.rm=TRUE)
+median_day_steps <- median(sum_day_steps$total_daily_steps,na.rm=TRUE)
+out_stat <- as.data.frame(c(mean_day_steps,median_day_steps),row.names=c("Mean","Median"))
+out_stat
+```
+
+# Question 2 : What is the average daily activity pattern ?
+
+### Summarize data based on average steps grouped by intervals
+```{r avg_int_steps_df, echo = TRUE}
+avg_int_steps <- activity_data %>% filter(!is.na(steps)) %>% group_by(interval) %>% summarize(avg_int_steps = mean(steps))
+avg_int_steps
+```
+
+### Plot time series based on intervals and average number of steps taken
+```{r avg_int_steps_plot, echo = TRUE}
+avg_int_steps_plot <- ggplot(avg_int_steps, aes(interval, avg_int_steps)) +
+                      geom_line(color = "blue") +
+                      labs(title = "Average Steps by Interval", x = "Interval", y = "Steps")
+avg_int_steps_plot
+```
+
+### Find the interval that contains the maximum number of steps on average
+```{r max_int_steps, echo = TRUE}
+avg_int_steps %>% filter(avg_int_steps == max(avg_int_steps))
+```
+
+
+# Imputing missing values
+
+In order to account for the missing values in the *steps* variable, we will replace the *N/As* by the average steps value by interval
+
+```{r replace_NA_df, echo = TRUE}
+activity_data_noNA <- activity_data
+na <- is.na(activity_data_noNA$steps)
+avg_int <- tapply(activity_data_noNA$steps, activity_data_noNA$interval, mean, na.rm=TRUE, simplify=TRUE)
+activity_data_noNA$steps[na] <- avg_int[as.character(activity_data_noNA$interval[na])]
+summary(activity_data_noNA$steps)
+```
+### Total daily steps taken without NAs
+Now that missing values have been replaced by the average value by interval, we repeat the summarizing an plotting steps from the first question
+```{r sum_daily_steps_noNA_df, echo = TRUE}
+sum_day_steps_noNA <- activity_data_noNA %>% filter(!is.na(steps)) %>% group_by(date) %>% summarize(total_daily_steps = sum(steps, na.rm = TRUE))
+sum_day_steps_noNA
+```
+
+### Plot total daily steps taken without NAs
+```{r sum_daily_steps_noNA_plot, echo = TRUE}
+sum_day_steps_noNA_plot <- ggplot(sum_day_steps_noNA, aes(total_daily_steps)) +
+                      geom_histogram(fill = "blue", binwidth = 1000) +
+                      labs(title = "Total Steps per Day (missing values replaced by average by interval)", x = "Steps per day", y = "Frequency")
+sum_day_steps_noNA_plot
+```
+### Mean and median of total number of steps taken per day
+```{r stat_daily_steps_noNA, echo = TRUE}
+mean_day_steps_noNA <- mean(sum_day_steps_noNA$total_daily_steps,na.rm=TRUE)
+median_day_steps_noNA <- median(sum_day_steps_noNA$total_daily_steps,na.rm=TRUE)
+
+out_stat_noNA <- as.data.frame(c(mean_day_steps_noNA,median_day_steps_noNA),row.names=c("Mean","Median"))
+out_stat_diff <- cbind(out_stat, out_stat_noNA)
+names(out_stat_diff) <- c("Stat_w_NA","Stat_wo_NA")
+out_stat_diff$diff <- out_stat_diff$Stat_wo_NA - out_stat_diff$Stat_w_NA
+out_stat_diff
+```
+
+# Question 3 : Are there differences in activity patterns between weekdays and weekends
+
+Using the dataset with missing values replaced, we start by adding a weekday/weekend indicator variable
+
+```{r wkend_ind, echo = TRUE}
+activity_data_noNA <- activity_data_noNA %>% 
+                      mutate(weektype = ifelse(weekdays(date)=="Saturday" | weekdays(date)=="Sunday", "weekend", "weekday"))
+head(activity_data_noNA)
+```
+
+### Summarize data based on average steps grouped by intervals and weektype
+```{r avg_int_type_steps_df, echo = TRUE}
+avg_int_type_steps <- activity_data_noNA %>% group_by(interval, weektype) %>% summarize(avg_steps = mean(steps))
+avg_int_type_steps
+```
+
+### Plotting results separately for weekdays and weekends
+```{r avg_int_type_steps_plot, echo = TRUE}
+wktype_int_steps_plot <-  ggplot(avg_int_type_steps, aes(interval, avg_steps, color = weektype)) +
+                          geom_line() +
+                          facet_wrap(~weektype, ncol = 1, nrow=2) + 
+                          labs(title = "Average Steps Taken by Interval", x = "Interval", y = "Steps")
+wktype_int_steps_plot
+```
